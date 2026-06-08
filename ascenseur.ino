@@ -141,7 +141,6 @@ void sauvegarderCompensation(int etage, int pasMontee, int pasDescente) {
 void appliquerCompensation(int etage, bool sensArrivee) {
   int pas = 0;
 
-  // Compensation seulement étage 1 et étage 2
   if (etage != 1 && etage != 2) return;
 
   if (sensArrivee == SENS_MONTEE) {
@@ -156,10 +155,12 @@ void appliquerCompensation(int etage, bool sensArrivee) {
 
   while (moteur.getStepsLeft() > 0) {
     moteur.move(sensArrivee);
+
     server.handleClient();
     gererRFID();
     verifierExpirationBadge();
-    mettreAJourLeds();
+
+    afficherToutRouge();
   }
 
   moteur.stop();
@@ -345,11 +346,12 @@ void avancerBloc(bool sens) {
   }
 }
 
+
 void allerAEtage(int cible) {
   int pos = positionActuelle();
 
   if (pos == cible) {
-    mettreAJourLeds();
+    afficherPosition(cible);
     return;
   }
 
@@ -360,17 +362,8 @@ void allerAEtage(int cible) {
 
   if (pos < 0) {
     dernierMessage = "Position inconnue, retour RDC";
-
-    moteurEnMarche = true;
-
-    while (!capteurActif(CAPTEUR_RDC)) {
-      avancerBloc(SENS_DESCENTE);
-    }
-
-    moteurEnMarche = false;
-    moteur.stop();
-    mettreAJourLeds();
-    return;
+    cible = 0;
+    pos = 3;
   }
 
   bool sens = cible > pos ? SENS_MONTEE : SENS_DESCENTE;
@@ -378,18 +371,21 @@ void allerAEtage(int cible) {
   moteurEnMarche = true;
   dernierMessage = "Deplacement vers etage " + String(cible);
 
+  afficherToutRouge();
+
   while (!capteurActif(capteurs[cible])) {
     avancerBloc(sens);
   }
 
-  // Compensation en nombre de pas
-  // Seulement pour étage 1 et étage 2
   appliquerCompensation(cible, sens);
 
   moteurEnMarche = false;
   moteur.stop();
-  mettreAJourLeds();
+
+  // LED verte seulement après arrivée réelle
+  afficherPosition(cible);
 }
+
 
 void appelEtDeplacement(int etageAppel, int destination) {
   allerAEtage(etageAppel);
@@ -404,36 +400,72 @@ void appelEtDeplacement(int etageAppel, int destination) {
 // =====================
 // BOUTONS
 // =====================
+
+const uint8_t boutonsPins[] = {
+  BTN_RDC_BAS,
+  BTN_RDC_HAUT,
+  BTN_ETAGE1_BAS,
+  BTN_ETAGE1_HAUT,
+  BTN_ETAGE2_BAS,
+  BTN_ETAGE2_HAUT,
+  BTN_ETAGE3
+};
+
+bool ancienBouton[7];
+
+void initialiserBoutons() {
+  for (int i = 0; i < 7; i++) {
+    ancienBouton[i] = digitalRead(boutonsPins[i]);
+  }
+}
+
+bool boutonDeclenche(int index) {
+  bool etat = digitalRead(boutonsPins[index]);
+
+  bool declenche = (ancienBouton[index] == HIGH && etat == LOW);
+
+  ancienBouton[index] = etat;
+
+  return declenche;
+}
+
+
 bool appuye(uint8_t pin) {
   return digitalRead(pin) == LOW;
 }
 
+
 void gererBoutons() {
   if (moteurEnMarche) return;
 
-  if (appuye(BTN_RDC_BAS)) {
-    appelEtDeplacement(0, 0);
+  if (boutonDeclenche(0)) {
+    allerAEtage(0);
   }
-  else if (appuye(BTN_RDC_HAUT)) {
-    appelEtDeplacement(0, 1);
+  else if (boutonDeclenche(1)) {
+    allerAEtage(1);
   }
-
-  else if (appuye(BTN_ETAGE1_BAS)) {
-    appelEtDeplacement(1, 0);
+  else if (boutonDeclenche(2)) {
+    allerAEtage(1);
+    attendreAvecService(TEMPS_ATTENTE_ETAGE);
+    allerAEtage(0);
   }
-  else if (appuye(BTN_ETAGE1_HAUT)) {
-    appelEtDeplacement(1, 2);
+  else if (boutonDeclenche(3)) {
+    allerAEtage(1);
+    attendreAvecService(TEMPS_ATTENTE_ETAGE);
+    allerAEtage(2);
   }
-
-  else if (appuye(BTN_ETAGE2_BAS)) {
-    appelEtDeplacement(2, 1);
+  else if (boutonDeclenche(4)) {
+    allerAEtage(2);
+    attendreAvecService(TEMPS_ATTENTE_ETAGE);
+    allerAEtage(1);
   }
-  else if (appuye(BTN_ETAGE2_HAUT)) {
-    appelEtDeplacement(2, 2);
+  else if (boutonDeclenche(5)) {
+    allerAEtage(2);
   }
-
-  else if (appuye(BTN_ETAGE3)) {
-    appelEtDeplacement(3, 2);
+  else if (boutonDeclenche(6)) {
+    allerAEtage(3);
+    attendreAvecService(TEMPS_ATTENTE_ETAGE);
+    allerAEtage(2);
   }
 }
 
@@ -518,6 +550,27 @@ void routeEffacerBadges() {
   envoyerJSON("{\"ok\":true}");
 }
 
+
+bool systemeInitialise = false;
+
+void initialiserAuRDC() {
+  dernierMessage = "Initialisation : retour RDC";
+  moteurEnMarche = true;
+
+  while (!capteurActif(CAPTEUR_RDC)) {
+    avancerBloc(SENS_DESCENTE);
+    mettreAJourLeds();
+  }
+
+  moteurEnMarche = false;
+  moteur.stop();
+
+  mettreAJourLeds();
+  dernierMessage = "Systeme pret au RDC";
+  systemeInitialise = true;
+}
+
+
 // =====================
 // SETUP
 // =====================
@@ -567,7 +620,11 @@ void setup() {
 
   server.begin();
 
-  mettreAJourLeds();
+  initialiserBoutons();
+
+  afficherToutRouge();
+  delay(500);
+  initialiserAuRDC();
 }
 
 // =====================
@@ -580,7 +637,10 @@ void loop() {
   verifierExpirationBadge();
 
   mettreAJourLeds();
-  gererBoutons();
+
+  if (systemeInitialise) {
+    gererBoutons();
+  }
 
   delay(20);
 }
