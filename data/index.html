@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ascenseur</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<main class="app">
+
+    <div class="topbar">
+        <h1>Projet Ascenseur</h1>
+        <button id="settingsBtn" class="settings-btn" onclick="toggleSettings()">⚙</button>
+    </div>
+
+    <section id="settingsPanel" class="settings-panel hidden">
+
+        <h2>Réglages</h2>
+
+        <div class="settings-block">
+            <h3>RFID</h3>
+
+            <button onclick="rfidMode('ajout')" class="settings-action blue">
+                Enregistrer un badge
+            </button>
+
+            <button onclick="rfidMode('suppression')" class="settings-action redBtn">
+                Supprimer un badge
+            </button>
+
+            <button onclick="clearBadges()" class="settings-action redBtn">
+                Effacer tous les badges
+            </button>
+
+            <div class="settings-info">
+                Dernier UID : <span id="lastUid">---</span>
+            </div>
+
+            <div class="settings-info">
+                Mode RFID : <span id="rfidMode">normal</span>
+            </div>
+        </div>
+
+        <div class="settings-block">
+            <h3>Compensation en pas</h3>
+
+            <div class="comp-row">
+                <label>Étage 1 montée</label>
+                <input id="comp_e1_up" type="number" value="0">
+            </div>
+
+            <div class="comp-row">
+                <label>Étage 1 descente</label>
+                <input id="comp_e1_down" type="number" value="0">
+            </div>
+
+            <div class="comp-row">
+                <label>Étage 2 montée</label>
+                <input id="comp_e2_up" type="number" value="0">
+            </div>
+
+            <div class="comp-row">
+                <label>Étage 2 descente</label>
+                <input id="comp_e2_down" type="number" value="0">
+            </div>
+
+            <button onclick="saveCompensation()" class="settings-action blue">
+                Enregistrer compensation
+            </button>
+        </div>
+
+    </section>
+
+    <section class="building">
+
+        <div class="floor">
+            <div class="info">
+                <span>Étage 3</span>
+                <div class="leds">
+                    <div id="green3" class="led green"></div>
+                    <div id="red3" class="led red"></div>
+                </div>
+            </div>
+
+            <div id="cage3" class="cage"></div>
+
+            <div class="buttons">
+                <button class="btn redBtn" onclick="sendButton(3,'down')">▼</button>
+            </div>
+        </div>
+
+        <div class="floor">
+            <div class="info">
+                <span>Étage 2</span>
+                <div class="leds">
+                    <div id="green2" class="led green"></div>
+                    <div id="red2" class="led red"></div>
+                </div>
+            </div>
+
+            <div id="cage2" class="cage"></div>
+
+            <div class="buttons">
+                <button class="btn blue" onclick="sendButton(2,'up')">▲</button>
+                <button class="btn redBtn" onclick="sendButton(2,'down')">▼</button>
+            </div>
+        </div>
+
+        <div class="floor">
+            <div class="info">
+                <span>Étage 1</span>
+                <div class="leds">
+                    <div id="green1" class="led green"></div>
+                    <div id="red1" class="led red"></div>
+                </div>
+            </div>
+
+            <div id="cage1" class="cage"></div>
+
+            <div class="buttons">
+                <button class="btn blue" onclick="sendButton(1,'up')">▲</button>
+                <button class="btn redBtn" onclick="sendButton(1,'down')">▼</button>
+            </div>
+        </div>
+
+        <div class="floor">
+            <div class="info">
+                <span>RDC</span>
+                <div class="leds">
+                    <div id="green0" class="led green"></div>
+                    <div id="red0" class="led red"></div>
+                </div>
+            </div>
+
+            <div id="cage0" class="cage"></div>
+
+            <div class="buttons">
+                <button class="btn blue" onclick="sendButton(0,'up')">▲</button>
+                <button class="btn redBtn" onclick="sendButton(0,'down')">▼</button>
+            </div>
+        </div>
+
+    </section>
+</main>
+
+<footer>
+    <div id="connection" class="disconnected">● Déconnecté</div>
+    <div id="status">Position : inconnue</div>
+    <div id="motor">● État moteur inconnu</div>
+    <div id="feedback"></div>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>
