@@ -1,3 +1,5 @@
+let lastMessage = "";
+
 const floorNames = [
     "RDC",
     "Étage 1",
@@ -168,8 +170,9 @@ function updateFromESP32(){
             updateRFID(data);
             updateCompInputs(data);
 
-            if(data.message){
+            if(data.message && data.message !== lastMessage){
                 document.getElementById("feedback").innerText = data.message;
+                lastMessage = data.message;
             }
         })
         .catch(() => {
