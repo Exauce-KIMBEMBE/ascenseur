@@ -24,8 +24,8 @@ Preferences prefs;
 #define IN3 27
 #define IN4 26
 
-#define RPM_MOTEUR 50
-#define PAS_PAR_BLOC 20
+#define RPM_MOTEUR   50
+#define PAS_PAR_BLOC 1
 
 #define SENS_MONTEE true
 #define SENS_DESCENTE false
@@ -109,7 +109,9 @@ ModeRFID modeRFID = RFID_NORMAL;
 String dernierUID = "";
 bool accesEtage3 = false;
 unsigned long tempsAccesEtage3 = 0;
-#define DUREE_ACCES_ETAGE3 15000
+int cibleEnCours = -1;
+
+#define DUREE_ACCES_ETAGE3 10000
 
 
 // =====================
@@ -228,6 +230,11 @@ void afficherToutRouge() {
 }
 
 void mettreAJourLeds() {
+  if (moteurEnMarche) {
+    afficherToutRouge();
+    return;
+  }
+
   int pos = positionActuelle();
 
   if (pos >= 0) {
@@ -305,9 +312,15 @@ void gererRFID() {
     if (badgeExiste(uid)) {
       accesEtage3 = true;
       tempsAccesEtage3 = millis();
-      dernierMessage = "Badge valide : acces etage 3 autorise";
-    } else {
+      dernierMessage = "Badge valide : montee vers etage 3";
+
+      if (!moteurEnMarche) {
+        allerAEtage(3);
+      }
+    }
+    else {
       dernierMessage = "Badge refuse : " + uid;
+      clignoterRougeRDC(3);
     }
   }
 }
@@ -333,10 +346,17 @@ void attendreAvecService(unsigned long duree) {
   }
 }
 
+
 void avancerBloc(bool sens) {
   moteur.newMove(PAS_PAR_BLOC);
 
   while (moteur.getStepsLeft() > 0) {
+
+    if (cibleEnCours >= 0 && capteurActif(capteurs[cibleEnCours])) {
+      moteur.stop();
+      return;
+    }
+
     moteur.move(sens);
 
     server.handleClient();
@@ -373,16 +393,19 @@ void allerAEtage(int cible) {
 
   afficherToutRouge();
 
+  cibleEnCours = cible;
+
   while (!capteurActif(capteurs[cible])) {
     avancerBloc(sens);
   }
+
+  cibleEnCours = -1;
 
   appliquerCompensation(cible, sens);
 
   moteurEnMarche = false;
   moteur.stop();
 
-  // LED verte seulement après arrivée réelle
   afficherPosition(cible);
 }
 
@@ -441,31 +464,51 @@ void gererBoutons() {
   if (boutonDeclenche(0)) {
     allerAEtage(0);
   }
+
   else if (boutonDeclenche(1)) {
     allerAEtage(1);
   }
+
   else if (boutonDeclenche(2)) {
     allerAEtage(1);
     attendreAvecService(TEMPS_ATTENTE_ETAGE);
     allerAEtage(0);
   }
+
   else if (boutonDeclenche(3)) {
     allerAEtage(1);
     attendreAvecService(TEMPS_ATTENTE_ETAGE);
     allerAEtage(2);
   }
+
   else if (boutonDeclenche(4)) {
     allerAEtage(2);
     attendreAvecService(TEMPS_ATTENTE_ETAGE);
     allerAEtage(1);
   }
+
   else if (boutonDeclenche(5)) {
     allerAEtage(2);
   }
+
   else if (boutonDeclenche(6)) {
-    allerAEtage(3);
-    attendreAvecService(TEMPS_ATTENTE_ETAGE);
-    allerAEtage(2);
+
+    int pos = positionActuelle();
+
+    if (pos == 3) {
+      allerAEtage(2);
+    }
+    else {
+      bool ancienAcces = accesEtage3;
+
+      accesEtage3 = true;
+      allerAEtage(3);
+      accesEtage3 = ancienAcces;
+
+      attendreAvecService(TEMPS_ATTENTE_ETAGE);
+
+      allerAEtage(2);
+    }
   }
 }
 
@@ -607,6 +650,11 @@ void setup() {
 
   prefs.begin("rfid", false);
 
+  if (listeBadges().indexOf("61:85:A0:17") < 0) {
+    ajouterBadge("61:85:A0:17");
+  }
+  chargerCompensations();
+
   WiFi.softAP(ssid, password);
   
   server.on("/", routePageWeb);
@@ -617,6 +665,7 @@ void setup() {
   server.on("/commande", routeCommande);
   server.on("/rfid", routeModeRFID);
   server.on("/badges/clear", routeEffacerBadges);
+  server.on("/button", routeButton);
 
   server.begin();
 
@@ -646,6 +695,22 @@ void loop() {
 }
 
 
+void clignoterRougeRDC(int fois) {
+  for (int i = 0; i < fois; i++) {
+    for (int j = 0; j < NB_SORTIES; j++) sorties[j] = false;
+    sorties[etages[0].rouge] = true;
+    envoyerRegistre();
+    delay(200);
+
+    sorties[etages[0].rouge] = false;
+    envoyerRegistre();
+    delay(200);
+  }
+
+  mettreAJourLeds();
+}
+
+
 void servirFichier(String chemin, String type) {
   if (!SPIFFS.exists(chemin)) {
     server.send(404, "text/plain", "Fichier introuvable");
@@ -667,4 +732,50 @@ void routeCSS() {
 
 void routeJS() {
   servirFichier("/script.js", "application/javascript");
+}
+
+void routeButton() {
+  if (!server.hasArg("floor") || !server.hasArg("direction")) {
+    envoyerJSON("{\"ok\":false,\"message\":\"parametres manquants\"}");
+    return;
+  }
+
+  int floor = server.arg("floor").toInt();
+  String direction = server.arg("direction");
+
+  if (floor == 0 && direction == "down") {
+    allerAEtage(0);
+  }
+  else if (floor == 0 && direction == "up") {
+    allerAEtage(1);
+  }
+  else if (floor == 1 && direction == "down") {
+    allerAEtage(1);
+    attendreAvecService(TEMPS_ATTENTE_ETAGE);
+    allerAEtage(0);
+  }
+  else if (floor == 1 && direction == "up") {
+    allerAEtage(1);
+    attendreAvecService(TEMPS_ATTENTE_ETAGE);
+    allerAEtage(2);
+  }
+  else if (floor == 2 && direction == "down") {
+    allerAEtage(2);
+    attendreAvecService(TEMPS_ATTENTE_ETAGE);
+    allerAEtage(1);
+  }
+  else if (floor == 2 && direction == "up") {
+    allerAEtage(2);
+  }
+  else if (floor == 3 && direction == "down") {
+    allerAEtage(3);
+    attendreAvecService(TEMPS_ATTENTE_ETAGE);
+    allerAEtage(2);
+  }
+  else {
+    envoyerJSON("{\"ok\":false,\"message\":\"commande invalide\"}");
+    return;
+  }
+
+  envoyerJSON("{\"ok\":true,\"message\":\"commande executee\"}");
 }
