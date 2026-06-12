@@ -24,7 +24,7 @@ Preferences prefs;
 #define IN3 27
 #define IN4 26
 
-#define RPM_MOTEUR   50
+#define RPM_MOTEUR   130
 #define PAS_PAR_BLOC 1
 
 #define SENS_MONTEE true
@@ -534,7 +534,15 @@ void routeStatus() {
 
   json += "\",";
   json += "\"message\":\"" + dernierMessage + "\",";
-  json += "\"badges\":\"" + listeBadges() + "\"";
+  json += "\"badges\":\"" + listeBadges() + "\",";
+
+  json += "\"compensation\":{";
+  json += "\"e1_up\":" + String(compMontee[1]) + ",";
+  json += "\"e1_down\":" + String(compDescente[1]) + ",";
+  json += "\"e2_up\":" + String(compMontee[2]) + ",";
+  json += "\"e2_down\":" + String(compDescente[2]);
+  json += "}";
+
   json += "}";
 
   envoyerJSON(json);
@@ -666,6 +674,7 @@ void setup() {
   server.on("/rfid", routeModeRFID);
   server.on("/badges/clear", routeEffacerBadges);
   server.on("/button", routeButton);
+  server.on("/config/compensation", routeCompensation);
 
   server.begin();
 
@@ -744,38 +753,91 @@ void routeButton() {
   String direction = server.arg("direction");
 
   if (floor == 0 && direction == "down") {
-    allerAEtage(0);
+    if (!moteurEnMarche) allerAEtage(0);
   }
+
   else if (floor == 0 && direction == "up") {
-    allerAEtage(1);
+    if (!moteurEnMarche) allerAEtage(1);
   }
+
   else if (floor == 1 && direction == "down") {
-    allerAEtage(1);
-    attendreAvecService(TEMPS_ATTENTE_ETAGE);
-    allerAEtage(0);
+    if (!moteurEnMarche) {
+      allerAEtage(1);
+      attendreAvecService(TEMPS_ATTENTE_ETAGE);
+      allerAEtage(0);
+    }
   }
+
   else if (floor == 1 && direction == "up") {
-    allerAEtage(1);
-    attendreAvecService(TEMPS_ATTENTE_ETAGE);
-    allerAEtage(2);
+    if (!moteurEnMarche) {
+      allerAEtage(1);
+      attendreAvecService(TEMPS_ATTENTE_ETAGE);
+      allerAEtage(2);
+    }
   }
+
   else if (floor == 2 && direction == "down") {
-    allerAEtage(2);
-    attendreAvecService(TEMPS_ATTENTE_ETAGE);
-    allerAEtage(1);
+    if (!moteurEnMarche) {
+      allerAEtage(2);
+      attendreAvecService(TEMPS_ATTENTE_ETAGE);
+      allerAEtage(1);
+    }
   }
+
   else if (floor == 2 && direction == "up") {
-    allerAEtage(2);
+    if (!moteurEnMarche) allerAEtage(2);
   }
+
   else if (floor == 3 && direction == "down") {
-    allerAEtage(3);
-    attendreAvecService(TEMPS_ATTENTE_ETAGE);
-    allerAEtage(2);
+    if (!moteurEnMarche) {
+      int pos = positionActuelle();
+
+      if (pos == 3) {
+        allerAEtage(2);
+      } else {
+        bool ancienAcces = accesEtage3;
+
+        accesEtage3 = true;
+        allerAEtage(3);
+        accesEtage3 = ancienAcces;
+
+        attendreAvecService(TEMPS_ATTENTE_ETAGE);
+
+        allerAEtage(2);
+      }
+    }
   }
+
   else {
     envoyerJSON("{\"ok\":false,\"message\":\"commande invalide\"}");
     return;
   }
 
   envoyerJSON("{\"ok\":true,\"message\":\"commande executee\"}");
+}
+
+void routeCompensation() {
+  if (!server.hasArg("e1_up") ||
+      !server.hasArg("e1_down") ||
+      !server.hasArg("e2_up") ||
+      !server.hasArg("e2_down")) {
+    envoyerJSON("{\"ok\":false,\"message\":\"parametres compensation manquants\"}");
+    return;
+  }
+
+  int e1_up = server.arg("e1_up").toInt();
+  int e1_down = server.arg("e1_down").toInt();
+  int e2_up = server.arg("e2_up").toInt();
+  int e2_down = server.arg("e2_down").toInt();
+
+  prefs.putInt("cm_e1", e1_up);
+  prefs.putInt("cd_e1", e1_down);
+  prefs.putInt("cm_e2", e2_up);
+  prefs.putInt("cd_e2", e2_down);
+
+  chargerCompensations();
+
+  dernierMessage = "Compensation enregistree";
+
+  envoyerJSON("{\"ok\":true,\"message\":\"Compensation enregistree\"}");
 }
