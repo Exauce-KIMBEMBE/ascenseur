@@ -168,7 +168,10 @@ function updateFromESP32(){
             }
 
             updateRFID(data);
-            updateCompInputs(data);
+            
+            if(!document.activeElement || document.activeElement.tagName !== "INPUT"){
+                updateCompInputs(data);
+            }
 
             if(data.message && data.message !== lastMessage){
                 document.getElementById("feedback").innerText = data.message;
